@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Ultimate Sales - Create by Hemraj Niraula</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body{font-family:Arial,sans-serif;background:#f5f5f5;margin:0;padding:0;}
+.container{max-width:1000px;margin:auto;padding:15px;background:#fff;box-shadow:0 0 10px rgba(0,0,0,0.1);}
+h2{text-align:center;color:#008cff;margin-bottom:20px;}
+input,button,select,textarea{width:100%;padding:10px;margin:5px 0;font-size:16px;box-sizing:border-box;}
+button{background:#008cff;color:#fff;border:none;cursor:pointer;font-weight:bold;}
+button:hover{opacity:0.8;}
+table{width:100%;border-collapse:collapse;margin-top:10px;}
+th,td{border:1px solid #000;padding:8px;text-align:center;}
+#dashboard,#changePassDiv,#entryForm,#chartsDiv{display:none;}
+.summary{margin-top:10px;font-weight:bold;color:#008cff;}
+@media(max-width:600px){input,button,select,textarea{font-size:14px;}}
+</style>
+</head>
+<body>
+
+<div class="container">
+<h2>Ultimate Sales - Create by Hemraj Niraula</h2>
+
+<!-- Login Page -->
+<div id="loginPage">
+<input type="text" id="username" placeholder="Username">
+<input type="password" id="password" placeholder="Password">
+<button onclick="signup()">Signup</button>
+<button onclick="login()">Login</button>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard">
+<h3>Dashboard</h3>
+<button onclick="showSaleEntry()">Add Sale</button>
+<button onclick="showPurchaseEntry()">Add Purchase</button>
+<button onclick="showStockEntry()">Add Stock</button>
+<button onclick="viewEntries()">View All Entries</button>
+<button onclick="exportCSV()">Export CSV</button>
+<button onclick="showCharts()">View Charts</button>
+<button onclick="showChangePassword()">Change Admin Password</button>
+<button onclick="logout()">Logout</button>
+
+<!-- Admin Change Password -->
+<div id="changePassDiv">
+<h4>Change Admin Password</h4>
+<input type="password" id="oldPass" placeholder="Old Password">
+<input type="password" id="newPass" placeholder="New Password">
+<button onclick="changeAdminPassword()">Update Password</button>
+</div>
+
+<!-- Entry Form -->
+<div id="entryForm">
+<h4 id="entryTitle"></h4>
+<input type="date" id="date">
+<input type="text" id="customer" placeholder="Customer/Supplier">
+<input type="text" id="product" placeholder="Product">
+<input type="number" id="amount" placeholder="Amount/Quantity">
+<textarea id="note" placeholder="Notes"></textarea>
+<button onclick="saveEntry()">Save Entry</button>
+</div>
+
+<!-- Charts -->
+<div id="chartsDiv">
+<h4>Summary Charts</h4>
+<canvas id="myChart" width="400" height="200"></canvas>
+</div>
+
+<!-- Table -->
+<h4>Entries</h4>
+<input type="text" id="search" placeholder="Search Customer/Product" onkeyup="searchTable()">
+<div class="summary" id="totals"></div>
+<table id="table">
+<tr><th>Type</th><th>Date</th><th>Customer/Supplier</th><th>Product</th><th>Amount</th><th>Note</th><th>Action</th></tr>
+</table>
+
+</div>
+</div>
+
+<script>
+// Initialize default admin
+if(!localStorage.getItem("users")){
+    localStorage.setItem("users", JSON.stringify([{username:"admin", password:"1234", data:[]}]));
+}
+
+let currentUser = null;
+let entryType = "";
+let editingIndex = null;
+
+// --- Signup ---
+function signup(){
+    const u=document.getElementById("username").value.trim();
+    const p=document.getElementById("password").value.trim();
+    if(!u || !p){ alert("Enter username & password"); return; }
+    let users = JSON.parse(localStorage.getItem("users")||"[]");
+    if(users.find(x=>x.username===u)){ alert("Username exists"); return; }
+    users.push({username:u,password:p,data:[]});
+    localStorage.setItem("users",JSON.stringify(users));
+    alert("Signup successful! Now login.");
+    document.getElementById("username").value="";
+    document.getElementById("password").value="";
+}
+
+// --- Login ---
+function login(){
+    const u=document.getElementById("username").value.trim();
+    const p=document.getElementById("password").value.trim();
+    if(!u || !p){ alert("Enter username & password"); return; }
+    let users = JSON.parse(localStorage.getItem("users")||"[]");
+    const user = users.find(x=>x.username===u && x.password===p);
+    if(!user){ alert("Invalid login"); return; }
+    currentUser=user;
+    document.getElementById("loginPage").style.display="none";
+    document.getElementById("dashboard").style.display="block";
+    loadTable();
+}
+
+// --- Logout ---
+function logout(){
+    currentUser=null;
+    document.getElementById("dashboard").style.display="none";
+    document.getElementById("loginPage").style.display="block";
+    document.getElementById("changePassDiv").style.display="none";
+    document.getElementById("chartsDiv").style.display="none";
+    document.getElementById("username").value="";
+    document.getElementById("password").value="";
+}
+
+// --- Entry Form ---
+function showSaleEntry(){ entryType="Sale"; showForm("Add Sale"); }
+function showPurchaseEntry(){ entryType="Purchase"; showForm("Add Purchase"); }
+function showStockEntry(){ entryType="Stock"; showForm("Add Stock"); }
+
+function showForm(title){
+    document.getElementById("entryTitle").innerText=title;
+    document.getElementById("entryForm").style.display="block";
+    document.getElementById("date").value="";
+    document.getElementById("customer").value="";
+    document.getElementById("product").value="";
+    document.getElementById("amount").value="";
+    document.getElementById("note").value="";
+    editingIndex=null;
+}
+
+// --- Save Entry ---
+function saveEntry(){
+    const date=document.getElementById("date").value;
+    const customer=document.getElementById("customer").value.trim();
+    const product=document.getElementById("product").value.trim();
+    const amount=parseFloat(document.getElementById("amount").value);
+    const note=document.getElementById("note").value.trim();
+    if(!date||!customer||!product||isNaN(amount)){ alert("Fill all fields"); return; }
+    const entry={type:entryType,date,customer,product,amount,note};
+    if(editingIndex!==null){ currentUser.data[editingIndex]=entry; }
+    else{ currentUser.data.push(entry); }
+    saveUserData(); loadTable();
+    document.getElementById("entryForm").style.display="none";
+}
+
+// --- Load Table ---
+function loadTable(){
+    const table=document.getElementById("table");
+    table.innerHTML='<tr><th>Type</th><th>Date</th><th>Customer/Supplier</th><th>Product</th><th>Amount</th><th>Note</th><th>Action</th></tr>';
+    let total=0,sales=0,purchase=0,stock=0;
+    currentUser.data.forEach((e,i)=>{
+        const row=table.insertRow();
+        row.insertCell(0).innerText=e.type;
+        row.insertCell(1).innerText=e.date;
+        row.insertCell(2).innerText=e.customer;
+        row.insertCell(3).innerText=e.product;
+        row.insertCell(4).innerText=e.amount;
+        row.insertCell(5).innerText=e.note;
+        total+=e.amount;
+        if(e.type==="Sale") sales+=e.amount;
+        if(e.type==="Purchase") purchase+=e.amount;
+        if(e.type==="Stock") stock+=e.amount;
+        const action=row.insertCell(6);
+        const editBtn=document.createElement("button");
+        editBtn.innerText="Edit";
+        editBtn.onclick=()=>{ editingIndex=i; showForm(`Edit ${e.type}`); document.getElementById("date").value=e.date; document.getElementById("customer").value=e.customer; document.getElementById("product").value=e.product; document.getElementById("amount").value=e.amount; document.getElementById("note").value=e.note; };
+        const delBtn=document.createElement("button");
+        delBtn.innerText="Delete"; delBtn.style.marginLeft="5px";
+        delBtn.onclick=()=>{ if(confirm("Delete entry?")){ currentUser.data.splice(i,1); saveUserData(); loadTable(); } };
+        action.appendChild(editBtn); action.appendChild(delBtn);
+    });
+    document.getElementById("totals").innerText=`Total Entries: ${currentUser.data.length} | Total Amount: ${total} | Sales: ${sales} | Purchase: ${purchase} | Stock: ${stock}`;
+}
+
+// --- Save User Data ---
+function saveUserData(){
+    let users=JSON.parse(localStorage.getItem("users")||"[]");
+    const index=users.findIndex(u=>u.username===currentUser.username);
+    users[index]=currentUser;
+    localStorage.setItem("users",JSON.stringify(users));
+}
+
+// --- View All ---
+function viewEntries(){ loadTable(); document.getElementById("entryForm").style.display="none"; document.getElementById("chartsDiv").style.display="none"; }
+
+// --- Search ---
+function searchTable(){
+    const val=document.getElementById("search").value.toLowerCase();
+    const table=document.getElementById("table");
+    for(let i=1;i<table.rows.length;i++){
+        let customer=table.rows[i].cells[2].innerText.toLowerCase();
+        let product=table.rows[i].cells[3].innerText.toLowerCase();
+        table.rows[i].style.display=(customer.includes(val)||product.includes(val))?"":"none";
+    }
+}
+
+// --- Export CSV ---
+function exportCSV(){
+    let csv="Type,Date,Customer/Supplier,Product,Amount,Note\n";
+    currentUser.data.forEach(e=>{ csv+=`${e.type},${e.date},${e.customer},${e.product},${e.amount},${e.note}\n`; });
+    const blob=new Blob([csv],{type:"text/csv"});
+    const link=document.createElement("a");
+    link.href=URL.createObjectURL(blob);
+    link.download="sales_data.csv";
+    link.click();
+}
+
+// --- Admin Change Password ---
+function showChangePassword(){
+    if(currentUser.username!=="admin"){ alert("Only admin can change password"); return; }
+    document.getElementById("changePassDiv").style.display="block";
+}
+function changeAdminPassword(){
+    const oldPass=document.getElementById("oldPass").value.trim();
+    const newPass=document.getElementById("newPass").value.trim();
+    if(!oldPass || !newPass){ alert("Enter both fields"); return; }
+    let users=JSON.parse(localStorage.getItem("users")||"[]");
+    const index=users.findIndex(u=>u.username==="admin");
+    if(users[index].password!==oldPass){ alert("Old password incorrect"); return; }
+    users[index].password=newPass;
+    localStorage.setItem("users",JSON.stringify(users));
+    alert("Admin password changed!");
+    document.getElementById("oldPass").value="";
+    document.getElementById("newPass").value="";
+    document.getElementById("changePassDiv").style.display="none";
+}
+
+// --- Charts ---
+function showCharts(){
+    document.getElementById("chartsDiv").style.display="block";
+    const sales=currentUser.data.filter(e=>e.type==="Sale").reduce((a,b)=>a+b.amount,0);
+    const purchase=currentUser.data.filter(e=>e.type==="Purchase").reduce((a,b)=>a+b.amount,0);
+    const stock=currentUser.data.filter(e=>e.type==="Stock").reduce((a,b)=>a+b.amount,0);
+
+    const ctx=document.getElementById("myChart").getContext("2d");
+    if(window.chart) window.chart.destroy(); // destroy previous chart
+    window.chart=new Chart(ctx,{
+        type:'bar',
+        data:{
+            labels:['Sales','Purchase','Stock'],
+            datasets:[{label:'Amount',data:[sales,purchase,stock],backgroundColor:['#008cff','#ff5500','#00cc44']}]
+        },
+        options:{responsive:true,plugins:{legend:{display:false}}}
+    });
+}
+</script>
+
+</body>
+</html>
